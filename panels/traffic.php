@@ -31,10 +31,13 @@ $total_rows = (int)($db->fetchOne(
 )['c'] ?? 0);
 $total_pages = max(1, (int)ceil($total_rows / $per_page));
 
+$paged_params = $params;
+$paged_params[] = $per_page;
+$paged_params[] = $offset;
 $rows = $db->fetchAll(
     "SELECT t.*, s.domain FROM traffic_log t LEFT JOIN sites s ON s.id=t.site_id
-     $where ORDER BY t.timestamp DESC LIMIT $per_page OFFSET $offset",
-    $params
+     $where ORDER BY t.timestamp DESC LIMIT ? OFFSET ?",
+    $paged_params
 );
 
 $sites = $db->fetchAll('SELECT id, name, domain FROM sites WHERE is_active=1 ORDER BY name');

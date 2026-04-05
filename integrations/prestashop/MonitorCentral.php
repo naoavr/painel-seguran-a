@@ -89,7 +89,7 @@ class MonitorCentral extends Module {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 2,
             CURLOPT_CONNECTTIMEOUT => 1,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_NOSIGNAL       => 1,
         ]);
         @curl_exec($ch);

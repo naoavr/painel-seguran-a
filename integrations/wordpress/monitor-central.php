@@ -84,7 +84,7 @@ class MonitorCentralPlugin {
             'headers' => ['Content-Type' => 'application/json'],
             'timeout' => 2,
             'blocking' => false,
-            'sslverify' => false,
+            'sslverify' => true,
         ]);
     }
 

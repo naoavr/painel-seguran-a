@@ -140,8 +140,7 @@ class MonitorCentralAgent {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 1,
             CURLOPT_CONNECTTIMEOUT => 1,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_NOSIGNAL       => 1,
+            CURLOPT_SSL_VERIFYPEER => true,
         ]);
         @curl_exec($ch);
         curl_close($ch);
@@ -158,7 +157,7 @@ class MonitorCentralAgent {
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 5,
-            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYPEER => true,
         ]);
         $response = curl_exec($ch);
         curl_close($ch);

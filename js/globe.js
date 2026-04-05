@@ -197,9 +197,18 @@
     div.className = 'ip-feed-item';
     var flag = item.country_code ? getFlagEmoji(item.country_code) : '🌐';
     var color = item.is_blocked ? '#ff2d55' : '#00c896';
-    div.innerHTML = '<span style="color:' + color + '">●</span>'
-      + '<span style="font-family:IBM Plex Mono,monospace;color:#e6edf3">' + escHtml(item.ip) + '</span>'
-      + '<span>' + flag + ' ' + escHtml(item.country || '') + '</span>';
+    var dot = document.createElement('span');
+    dot.textContent = '●';
+    dot.style.color = color;
+    var ipSpan = document.createElement('span');
+    ipSpan.style.fontFamily = 'IBM Plex Mono,monospace';
+    ipSpan.style.color = '#e6edf3';
+    ipSpan.textContent = item.ip || '';
+    var countrySpan = document.createElement('span');
+    countrySpan.textContent = flag + ' ' + (item.country || '');
+    div.appendChild(dot);
+    div.appendChild(ipSpan);
+    div.appendChild(countrySpan);
     ipFeed.insertBefore(div, ipFeed.firstChild);
     var all = ipFeed.querySelectorAll('.ip-feed-item');
     if (all.length > 30) all[all.length - 1].remove();
