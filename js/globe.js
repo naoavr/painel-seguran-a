@@ -278,7 +278,11 @@
     // Controls
     var ctrlWrap = document.querySelector('.globe-controls');
     if (ctrlWrap) {
-      ctrlWrap.innerHTML = '<button class="btn btn-outline btn-sm" onclick="arcs=[]">Clear</button>';
+      var clearBtn = document.createElement('button');
+      clearBtn.className = 'btn btn-outline btn-sm';
+      clearBtn.textContent = 'Clear';
+      clearBtn.addEventListener('click', function () { arcs = []; });
+      ctrlWrap.appendChild(clearBtn);
     }
 
     // Start fetch loop

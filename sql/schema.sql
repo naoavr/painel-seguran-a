@@ -217,10 +217,8 @@ CREATE TABLE IF NOT EXISTS `traffic_stats_hourly` (
 -- Default Data
 -- --------------------------------------------------------
 
--- Default admin user (password: admin123)
-INSERT INTO `dashboard_users` (`username`, `password_hash`, `email`, `is_active`) VALUES
-('admin', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin@localhost', 1)
-ON DUPLICATE KEY UPDATE `username` = `username`;
+-- NOTE: No default admin user is created here.
+-- Run install.php to create the admin account with a password you choose.
 
 -- Default system configuration
 INSERT INTO `system_config` (`config_key`, `config_value`) VALUES
