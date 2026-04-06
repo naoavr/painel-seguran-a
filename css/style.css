@@ -709,6 +709,7 @@ code {
   .main-content { margin-left: 0; padding: calc(var(--topbar-h) + 16px) 16px 16px; }
 
   .card-grid { grid-template-columns: 1fr 1fr; }
+  .grid-2col { grid-template-columns: 1fr; }
 
   .topbar .menu-toggle {
     display: flex;
@@ -785,7 +786,6 @@ body.globe-page {
 .stats-bar strong { color: var(--text); font-family: 'IBM Plex Mono', monospace; }
 
 /* ── Manual / docs ── */
-.docs-wrap { max-width: 800px; }
 .docs-wrap h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; color: var(--text); }
 .docs-wrap h3 { font-size: 1.1rem; font-weight: 600; margin: 24px 0 8px; color: var(--accent); }
 .docs-wrap p  { color: var(--text-dim); margin-bottom: 12px; line-height: 1.8; }
@@ -793,6 +793,8 @@ body.globe-page {
 .docs-wrap li { margin-bottom: 4px; }
 .docs-wrap .doc-section { margin-bottom: 40px; padding-bottom: 40px; border-bottom: 1px solid var(--border); }
 .docs-wrap .doc-section:last-child { border-bottom: none; }
+
+.grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
 /* ── Utility ── */
 .text-muted   { color: var(--text-dim); }
