@@ -1,22 +1,28 @@
-/* Monitor Central — globe.js */
+/* Monitor Central — globe.js (3-D orthographic globe) */
 (function () {
   'use strict';
 
-  var canvas    = document.getElementById('globeCanvas');
+  var canvas     = document.getElementById('globeCanvas');
   var ctx;
-  var W, H;
-  var arcs      = [];
-  var ripples   = [];
-  var totalReqs = 0;
+  var W, H, cx, cy, R;   // R = base globe radius in px
+  var scale      = 1;
+  var rotLon     = 0;     // degrees — auto-rotates
+  var rotLat     = 20;    // degrees — tilt
+  var autoRotate = true;
+  var lastIdleAt = 0;
+  var IDLE_RESUME = 3000; // ms of inactivity before auto-rotation resumes
+
+  var arcs       = [];
+  var ripples    = [];
+  var totalReqs  = 0;
   var totalBlock = 0;
   var lastFetch  = 0;
-  var scale      = 1;
-  var panX       = 0;
-  var panY       = 0;
   var ipFeedList = null;
+  var prevTs     = 0;
 
-  // Continent outlines in [lon, lat] degrees (equirectangular projection, matches grid)
-  // Each entry has fill color and a pre-computed stroke color (no fragile string replace needed)
+  var TO_RAD = Math.PI / 180;
+
+  // Continent outlines as [lon, lat] pairs
   var continents = [
     // North America
     { color: 'rgba(0,200,150,0.15)', stroke: 'rgba(0,200,150,0.4)', points: [
@@ -66,193 +72,283 @@
     ]},
   ];
 
-  function lonLatToXY(lon, lat) {
-    var x = ((lon + 180) / 360) * W;
-    var y = ((90 - lat) / 180) * H;
-    return { x: x, y: y };
+  // ── Orthographic projection ───────────────────────────────────────────────
+  // Projects (lon, lat) degrees onto canvas using current rotLon / rotLat.
+  // Returns { x, y, visible } — visible is false for the back hemisphere.
+  function project(lon, lat) {
+    var phi  = lat  * TO_RAD;
+    var lam  = lon  * TO_RAD;
+    var phi0 = rotLat * TO_RAD;
+    var lam0 = rotLon * TO_RAD;
+    var dLam    = lam - lam0;
+    var sinPhi  = Math.sin(phi),  cosPhi  = Math.cos(phi);
+    var sinPhi0 = Math.sin(phi0), cosPhi0 = Math.cos(phi0);
+    var cosDLam = Math.cos(dLam), sinDLam = Math.sin(dLam);
+    var cosC = sinPhi0 * sinPhi + cosPhi0 * cosPhi * cosDLam;
+    var r    = R * scale;
+    return {
+      x:       cx + r * cosPhi * sinDLam,
+      y:       cy - r * (cosPhi0 * sinPhi - sinPhi0 * cosPhi * cosDLam),
+      visible: cosC >= 0,
+    };
   }
 
-  function normToXY(nx, ny) {
-    return { x: nx * W, y: ny * H };
-  }
-
+  // ── Sizing ────────────────────────────────────────────────────────────────
   function resize() {
-    W = canvas.width  = canvas.offsetWidth  || window.innerWidth;
-    H = canvas.height = canvas.offsetHeight || window.innerHeight;
+    W  = canvas.width  = canvas.offsetWidth  || window.innerWidth;
+    H  = canvas.height = canvas.offsetHeight || window.innerHeight;
+    cx = W / 2;
+    cy = H / 2;
+    R  = Math.min(W, H) * 0.42;
   }
 
-  function drawMap() {
-    ctx.clearRect(0, 0, W, H);
+  // ── Globe base (ocean + atmosphere) ──────────────────────────────────────
+  function drawSphere() {
+    var r = R * scale;
+
+    // Soft atmosphere halo
+    var atmo = ctx.createRadialGradient(cx, cy, r * 0.9, cx, cy, r * 1.14);
+    atmo.addColorStop(0, 'rgba(0,132,255,0.07)');
+    atmo.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = atmo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.14, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ocean fill with subtle radial shading
+    var ocean = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.25, 0, cx, cy, r);
+    ocean.addColorStop(0, '#0b1a2e');
+    ocean.addColorStop(1, '#030a14');
+    ctx.fillStyle = ocean;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ── Graticule (grid lines) ────────────────────────────────────────────────
+  function drawGraticule() {
+    ctx.strokeStyle = 'rgba(33,38,45,0.55)';
+    ctx.lineWidth   = 0.5;
+
+    // Longitude meridians every 30°
+    for (var lon = -180; lon < 180; lon += 30) {
+      ctx.beginPath();
+      var pen = false;
+      for (var lat = -88; lat <= 88; lat += 3) {
+        var p = project(lon, lat);
+        if (p.visible) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; }
+        else { pen = false; }
+      }
+      ctx.stroke();
+    }
+
+    // Latitude parallels every 30°
+    for (var lat2 = -60; lat2 <= 60; lat2 += 30) {
+      ctx.beginPath();
+      var pen2 = false;
+      for (var lon2 = -180; lon2 <= 180; lon2 += 3) {
+        var p2 = project(lon2, lat2);
+        if (p2.visible) { pen2 ? ctx.lineTo(p2.x, p2.y) : ctx.moveTo(p2.x, p2.y); pen2 = true; }
+        else { pen2 = false; }
+      }
+      ctx.stroke();
+    }
+  }
+
+  // ── Continent polygons ────────────────────────────────────────────────────
+  // Subdivides each edge for smoother horizon clipping.
+  function buildContinentPath(points) {
+    var SUB = 4;
+    var n   = points.length;
+    ctx.beginPath();
+    var pen = false;
+    for (var i = 0; i < n; i++) {
+      var a = points[i];
+      var b = points[(i + 1) % n];
+      for (var s = 0; s < SUB; s++) {
+        var t   = s / SUB;
+        var lon = a[0] + (b[0] - a[0]) * t;
+        var lat = a[1] + (b[1] - a[1]) * t;
+        var p   = project(lon, lat);
+        if (p.visible) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; }
+        else { pen = false; }
+      }
+    }
+  }
+
+  function drawContinents() {
+    continents.forEach(function (cont) {
+      buildContinentPath(cont.points);
+      ctx.fillStyle   = cont.color;
+      ctx.fill();
+      ctx.strokeStyle = cont.stroke;
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    });
+  }
+
+  // ── Arcs ──────────────────────────────────────────────────────────────────
+  function drawArcs(now) {
+    arcs = arcs.filter(function (a) { return now - a.born < a.life; });
+    arcs.forEach(function (a) {
+      var progress = (now - a.born) / a.life;
+      var alpha    = progress < 0.5 ? progress * 2 : 2 - progress * 2;
+
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.85;
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = a.color;
+      ctx.shadowBlur  = 6;
+
+      ctx.beginPath();
+      var steps = 60;
+      var pen   = false;
+      for (var i = 0; i <= Math.round(steps * progress); i++) {
+        var t   = i / steps;
+        var lon = a.srcLon + (a.dstLon - a.srcLon) * t;
+        var lat = a.srcLat + (a.dstLat - a.srcLat) * t;
+        var p   = project(lon, lat);
+        if (p.visible) { pen ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); pen = true; }
+        else { pen = false; }
+      }
+      ctx.stroke();
+
+      // Tip dot
+      var tp   = Math.min(progress, 1);
+      var tLon = a.srcLon + (a.dstLon - a.srcLon) * tp;
+      var tLat = a.srcLat + (a.dstLat - a.srcLat) * tp;
+      var tp_p = project(tLon, tLat);
+      if (tp_p.visible) {
+        ctx.fillStyle  = a.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(tp_p.x, tp_p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  // ── Ripples ───────────────────────────────────────────────────────────────
+  function drawRipples(now) {
+    ripples = ripples.filter(function (r) { return now - r.born < r.life; });
+    ripples.forEach(function (r) {
+      var p = project(r.lon, r.lat);
+      if (!p.visible) return;
+      var progress = (now - r.born) / r.life;
+      ctx.save();
+      ctx.strokeStyle = r.color;
+      ctx.globalAlpha = (1 - progress) * 0.6;
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, progress * 40, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  // ── Server dots ───────────────────────────────────────────────────────────
+  function drawServerDots() {
+    var servers = window._globeServers || [];
+    servers.forEach(function (s) {
+      var lon = parseFloat(s.lon);
+      var lat = parseFloat(s.lat);
+      if (isNaN(lon) || isNaN(lat)) return;
+      var p = project(lon, lat);
+      if (!p.visible) return;
+      ctx.save();
+      ctx.fillStyle   = '#00c896';
+      ctx.shadowColor = '#00c896';
+      ctx.shadowBlur  = 12;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#e6edf3';
+      ctx.font = '11px Space Grotesk, sans-serif';
+      ctx.fillText(s.name || s.domain, p.x + 8, p.y + 4);
+    });
+  }
+
+  // ── Frame loop ────────────────────────────────────────────────────────────
+  function frame(ts) {
+    var dt  = Math.min((ts - prevTs) / 1000, 0.1);
+    prevTs  = ts;
+    var now = Date.now();
+
+    // Resume auto-rotation after idle
+    if (!autoRotate && lastIdleAt > 0 && now - lastIdleAt > IDLE_RESUME) {
+      autoRotate = true;
+    }
+    if (autoRotate) {
+      rotLon = (rotLon + dt * 6) % 360; // 6 °/s — full rotation in 60 s
+    }
 
     // Background
     ctx.fillStyle = '#030508';
     ctx.fillRect(0, 0, W, H);
 
+    drawSphere();
+
+    // Clip graticule and continent fills to the globe circle
+    var r = R * scale;
     ctx.save();
-    ctx.translate(panX, panY);
-    ctx.scale(scale, scale);
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(33,38,45,0.4)';
-    ctx.lineWidth = 0.5;
-    for (var lon = -180; lon <= 180; lon += 30) {
-      var p = lonLatToXY(lon, 90);
-      var p2 = lonLatToXY(lon, -90);
-      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
-    }
-    for (var lat = -60; lat <= 60; lat += 30) {
-      var p3 = lonLatToXY(-180, lat);
-      var p4 = lonLatToXY(180, lat);
-      ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
-    }
-
-    // Continents
-    continents.forEach(function (cont) {
-      ctx.beginPath();
-      cont.points.forEach(function (pt, i) {
-        var xy = lonLatToXY(pt[0], pt[1]);
-        if (i === 0) ctx.moveTo(xy.x, xy.y);
-        else ctx.lineTo(xy.x, xy.y);
-      });
-      ctx.closePath();
-      ctx.fillStyle = cont.color;
-      ctx.fill();
-      ctx.strokeStyle = cont.stroke;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    });
-
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    drawGraticule();
+    drawContinents();
     ctx.restore();
-  }
 
-  function drawArcs(now) {
-    arcs = arcs.filter(function (a) { return now - a.born < a.life; });
-    ctx.save();
-    ctx.translate(panX, panY);
-    ctx.scale(scale, scale);
-    arcs.forEach(function (a) {
-      var progress = (now - a.born) / a.life;
-      var alpha = progress < 0.5 ? progress * 2 : 2 - progress * 2;
+    // Globe limb
+    ctx.strokeStyle = 'rgba(10,132,255,0.3)';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
 
-      var cp = {
-        x: (a.sx + a.ex) / 2,
-        y: Math.min(a.sy, a.ey) - Math.abs(a.ex - a.sx) * 0.4
-      };
-
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.8;
-      ctx.strokeStyle = a.color;
-      ctx.lineWidth = 1.5;
-      ctx.shadowColor = a.color;
-      ctx.shadowBlur = 6;
-
-      ctx.beginPath();
-      for (var t = 0; t <= progress; t += 0.02) {
-        var mt = 1 - t;
-        var x = mt * mt * a.sx + 2 * mt * t * cp.x + t * t * a.ex;
-        var y = mt * mt * a.sy + 2 * mt * t * cp.y + t * t * a.ey;
-        if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-
-      var tp = Math.min(progress, 1);
-      var mt2 = 1 - tp;
-      var tx = mt2 * mt2 * a.sx + 2 * mt2 * tp * cp.x + tp * tp * a.ex;
-      var ty = mt2 * mt2 * a.sy + 2 * mt2 * tp * cp.y + tp * tp * a.ey;
-      ctx.fillStyle = a.color;
-      ctx.beginPath();
-      ctx.arc(tx, ty, 3, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore();
-    });
-    ctx.restore();
-  }
-
-  function drawRipples(now) {
-    ripples = ripples.filter(function (r) { return now - r.born < r.life; });
-    ctx.save();
-    ctx.translate(panX, panY);
-    ctx.scale(scale, scale);
-    ripples.forEach(function (r) {
-      var progress = (now - r.born) / r.life;
-      var radius   = progress * 40;
-      var alpha    = (1 - progress) * 0.6;
-      ctx.save();
-      ctx.strokeStyle = r.color;
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    });
-    ctx.restore();
-  }
-
-  function drawServerDots() {
-    var servers = window._globeServers || [];
-    ctx.save();
-    ctx.translate(panX, panY);
-    ctx.scale(scale, scale);
-    servers.forEach(function (s) {
-      var lon = parseFloat(s.lon);
-      var lat = parseFloat(s.lat);
-      if (isNaN(lon) || isNaN(lat)) return;
-      var pos = lonLatToXY(lon, lat);
-      ctx.save();
-      ctx.fillStyle = '#00c896';
-      ctx.shadowColor = '#00c896';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      ctx.fillStyle = '#e6edf3';
-      ctx.font = '11px Space Grotesk, sans-serif';
-      ctx.fillText(s.name || s.domain, pos.x + 8, pos.y + 4);
-    });
-    ctx.restore();
-  }
-
-  function frame() {
-    var now = Date.now();
-    drawMap();
     drawArcs(now);
     drawRipples(now);
     drawServerDots();
+
     requestAnimationFrame(frame);
   }
 
+  // ── Arc / Ripple helpers ──────────────────────────────────────────────────
+  // Store geographic coordinates so they project correctly as the globe rotates.
   function addArc(srcLon, srcLat, dstLon, dstLat, color, isBlocked) {
-    var src = lonLatToXY(srcLon, srcLat);
-    var dst = lonLatToXY(dstLon, dstLat);
     arcs.push({
-      sx: src.x, sy: src.y,
-      ex: dst.x, ey: dst.y,
+      srcLon: srcLon, srcLat: srcLat,
+      dstLon: dstLon, dstLat: dstLat,
       color: color || (isBlocked ? '#ff2d55' : '#00c896'),
       born: Date.now(),
       life: 3000,
     });
-    ripples.push({ x: dst.x, y: dst.y, color: color || '#00c896', born: Date.now(), life: 1500 });
+    ripples.push({
+      lon: dstLon, lat: dstLat,
+      color: color || '#00c896',
+      born: Date.now(), life: 1500,
+    });
   }
 
+  // ── Live feed ─────────────────────────────────────────────────────────────
   function addFeedItem(item) {
     if (!ipFeedList) return;
     var div = document.createElement('div');
     div.className = 'ip-feed-item';
-    var flag = item.country_code ? getFlagEmoji(item.country_code) : '🌐';
+    var flag  = item.country_code ? getFlagEmoji(item.country_code) : '🌐';
     var color = item.is_blocked ? '#ff2d55' : '#00c896';
-    var dot = document.createElement('span');
+    var dot   = document.createElement('span');
     dot.textContent = '●';
     dot.style.color = color;
     var ipSpan = document.createElement('span');
-    ipSpan.className = 'ip-text';
+    ipSpan.className        = 'ip-text';
     ipSpan.style.fontFamily = 'IBM Plex Mono,monospace';
-    ipSpan.style.color = '#e6edf3';
-    ipSpan.textContent = item.ip || '';
+    ipSpan.style.color      = '#e6edf3';
+    ipSpan.textContent      = item.ip || '';
     var countrySpan = document.createElement('span');
-    countrySpan.className = 'ip-country';
+    countrySpan.className   = 'ip-country';
     countrySpan.textContent = flag + ' ' + (item.country || '');
     div.appendChild(dot);
     div.appendChild(ipSpan);
@@ -269,17 +365,17 @@
     return String.fromCodePoint(base + cc.charCodeAt(0) - 65, base + cc.charCodeAt(1) - 65);
   }
 
+  // ── Stats ─────────────────────────────────────────────────────────────────
   function updateStats() {
-    var statsBar = document.getElementById('statsBar');
-    if (!statsBar) return;
-    var reqEl  = document.getElementById('s-req');
-    var blkEl  = document.getElementById('s-blk');
-    var arcEl  = document.getElementById('s-arcs');
-    if (reqEl)  reqEl.textContent  = totalReqs;
-    if (blkEl)  blkEl.textContent  = totalBlock;
-    if (arcEl)  arcEl.textContent  = arcs.length;
+    var reqEl = document.getElementById('s-req');
+    var blkEl = document.getElementById('s-blk');
+    var arcEl = document.getElementById('s-arcs');
+    if (reqEl) reqEl.textContent = totalReqs;
+    if (blkEl) blkEl.textContent = totalBlock;
+    if (arcEl) arcEl.textContent = arcs.length;
   }
 
+  // ── Data fetch ────────────────────────────────────────────────────────────
   function fetchData() {
     var now = Date.now();
     if (now - lastFetch < 3000) return;
@@ -300,8 +396,8 @@
         totalReqs++;
         if (item.is_blocked) totalBlock++;
 
-        var srcLon = item.lon  != null && item.lon  !== '' ? parseFloat(item.lon)  : null;
-        var srcLat = item.lat  != null && item.lat  !== '' ? parseFloat(item.lat)  : null;
+        var srcLon = item.lon      != null && item.lon      !== '' ? parseFloat(item.lon)      : null;
+        var srcLat = item.lat      != null && item.lat      !== '' ? parseFloat(item.lat)      : null;
         var dstLon = item.site_lon != null && item.site_lon !== '' ? parseFloat(item.site_lon) : null;
         var dstLat = item.site_lat != null && item.site_lat !== '' ? parseFloat(item.site_lat) : null;
         var color  = item.is_blocked ? '#ff2d55' : (item.abuse_score > 50 ? '#ff9500' : '#00c896');
@@ -322,50 +418,67 @@
     return meta ? meta.getAttribute('content') : '';
   }
 
-  // Pan support
-  var isPanning = false;
-  var panStart  = { x: 0, y: 0 };
+  // ── Interaction (drag to rotate, wheel to zoom) ───────────────────────────
+  var isDragging = false;
+  var dragStart  = { x: 0, y: 0, lon: 0, lat: 0 };
 
-  function initPan() {
+  function pauseAutoRotate() {
+    autoRotate = false;
+    lastIdleAt = 0;
+  }
+
+  function initInteraction() {
     canvas.addEventListener('mousedown', function (e) {
-      isPanning = true;
-      panStart = { x: e.clientX - panX, y: e.clientY - panY };
+      isDragging = true;
+      pauseAutoRotate();
+      dragStart = { x: e.clientX, y: e.clientY, lon: rotLon, lat: rotLat };
       canvas.style.cursor = 'grabbing';
     });
     canvas.addEventListener('mousemove', function (e) {
-      if (!isPanning) return;
-      panX = e.clientX - panStart.x;
-      panY = e.clientY - panStart.y;
+      if (!isDragging) return;
+      var dx = e.clientX - dragStart.x;
+      var dy = e.clientY - dragStart.y;
+      rotLon = (dragStart.lon - dx * 0.3 + 360) % 360;
+      rotLat = Math.max(-80, Math.min(80, dragStart.lat + dy * 0.2));
     });
-    canvas.addEventListener('mouseup',   function () { isPanning = false; canvas.style.cursor = 'default'; });
-    canvas.addEventListener('mouseleave',function () { isPanning = false; canvas.style.cursor = 'default'; });
+    canvas.addEventListener('mouseup', function () {
+      isDragging = false;
+      lastIdleAt = Date.now();
+      canvas.style.cursor = 'default';
+    });
+    canvas.addEventListener('mouseleave', function () {
+      if (isDragging) { isDragging = false; lastIdleAt = Date.now(); }
+      canvas.style.cursor = 'default';
+    });
     canvas.addEventListener('wheel', function (e) {
       e.preventDefault();
       var delta = e.deltaY > 0 ? 0.9 : 1.1;
-      var rect  = canvas.getBoundingClientRect();
-      var mx = e.clientX - rect.left;
-      var my = e.clientY - rect.top;
-      panX = mx - (mx - panX) * delta;
-      panY = my - (my - panY) * delta;
-      scale = Math.min(6, Math.max(0.3, scale * delta));
+      scale = Math.min(3, Math.max(0.3, scale * delta));
     }, { passive: false });
 
-    // Touch pan
+    // Touch
     var touch0 = null;
     canvas.addEventListener('touchstart', function (e) {
       if (e.touches.length === 1) {
-        touch0 = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
+        pauseAutoRotate();
+        touch0 = { x: e.touches[0].clientX, y: e.touches[0].clientY, lon: rotLon, lat: rotLat };
       }
     }, { passive: true });
     canvas.addEventListener('touchmove', function (e) {
       if (e.touches.length === 1 && touch0) {
-        panX = e.touches[0].clientX - touch0.x;
-        panY = e.touches[0].clientY - touch0.y;
+        var dx = e.touches[0].clientX - touch0.x;
+        var dy = e.touches[0].clientY - touch0.y;
+        rotLon = (touch0.lon - dx * 0.3 + 360) % 360;
+        rotLat = Math.max(-80, Math.min(80, touch0.lat + dy * 0.2));
       }
     }, { passive: true });
-    canvas.addEventListener('touchend', function () { touch0 = null; }, { passive: true });
+    canvas.addEventListener('touchend', function () {
+      touch0 = null;
+      lastIdleAt = Date.now();
+    }, { passive: true });
   }
 
+  // ── Init ──────────────────────────────────────────────────────────────────
   function init() {
     ctx = canvas.getContext('2d');
     resize();
@@ -373,12 +486,12 @@
 
     ipFeedList = document.getElementById('ipFeedList');
 
-    initPan();
+    initInteraction();
 
     // Expose controls to globe.php buttons
-    window._globeZoomIn  = function () { scale = Math.min(6, scale * 1.2); };
+    window._globeZoomIn  = function () { scale = Math.min(3, scale * 1.2); };
     window._globeZoomOut = function () { scale = Math.max(0.3, scale / 1.2); };
-    window._globeReset   = function () { scale = 1; panX = 0; panY = 0; };
+    window._globeReset   = function () { scale = 1; rotLon = 0; rotLat = 20; autoRotate = true; lastIdleAt = 0; };
     window._globeClear   = function () { arcs = []; };
 
     fetchData();
