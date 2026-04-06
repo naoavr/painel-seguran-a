@@ -786,7 +786,6 @@ body.globe-page {
 .stats-bar strong { color: var(--text); font-family: 'IBM Plex Mono', monospace; }
 
 /* ── Manual / docs ── */
-.docs-wrap { }
 .docs-wrap h2 { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; color: var(--text); }
 .docs-wrap h3 { font-size: 1.1rem; font-weight: 600; margin: 24px 0 8px; color: var(--accent); }
 .docs-wrap p  { color: var(--text-dim); margin-bottom: 12px; line-height: 1.8; }

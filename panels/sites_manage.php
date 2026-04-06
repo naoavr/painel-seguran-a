@@ -21,7 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $apiKey  = generate_api_key();
                 $host    = preg_replace('/^https?:\/\//i', '', rtrim($domain, '/'));
                 $host    = strtok($host, '/');
-                $siteIp  = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
+                $resolved = gethostbyname($host);
+                $siteIp  = filter_var($host, FILTER_VALIDATE_IP) ? $host
+                         : ($resolved !== $host ? $resolved : null);
                 $geoInfo = ($siteIp && filter_var($siteIp, FILTER_VALIDATE_IP)) ? get_ip_info($siteIp) : null;
                 $siteLat = isset($geoInfo['lat']) ? (float)$geoInfo['lat'] : null;
                 $siteLon = isset($geoInfo['lon']) ? (float)$geoInfo['lon'] : null;
