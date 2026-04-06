@@ -10,7 +10,8 @@
   var rotLat     = 20;    // degrees — tilt
   var autoRotate = true;
   var lastIdleAt = 0;
-  var IDLE_RESUME = 3000; // ms of inactivity before auto-rotation resumes
+  var IDLE_RESUME    = 3000; // ms of inactivity before auto-rotation resumes
+  var DRAG_SENSITIVITY = 0.3; // degrees rotated per pixel dragged
 
   var arcs       = [];
   var ripples    = [];
@@ -273,7 +274,7 @@
 
   // ── Frame loop ────────────────────────────────────────────────────────────
   function frame(ts) {
-    var dt  = Math.min((ts - prevTs) / 1000, 0.1);
+    var dt  = Math.min((ts - prevTs) / 1000, 0.1); // cap at 100 ms to avoid large jumps after tab wake
     prevTs  = ts;
     var now = Date.now();
 
@@ -282,7 +283,7 @@
       autoRotate = true;
     }
     if (autoRotate) {
-      rotLon = (rotLon + dt * 6) % 360; // 6 °/s — full rotation in 60 s
+      rotLon = ((rotLon + dt * 6) % 360 + 360) % 360; // 6 °/s — full rotation in 60 s
     }
 
     // Background
@@ -438,7 +439,7 @@
       if (!isDragging) return;
       var dx = e.clientX - dragStart.x;
       var dy = e.clientY - dragStart.y;
-      rotLon = (dragStart.lon - dx * 0.3 + 360) % 360;
+      rotLon = ((dragStart.lon - dx * DRAG_SENSITIVITY) % 360 + 360) % 360;
       rotLat = Math.max(-80, Math.min(80, dragStart.lat + dy * 0.2));
     });
     canvas.addEventListener('mouseup', function () {
@@ -468,7 +469,7 @@
       if (e.touches.length === 1 && touch0) {
         var dx = e.touches[0].clientX - touch0.x;
         var dy = e.touches[0].clientY - touch0.y;
-        rotLon = (touch0.lon - dx * 0.3 + 360) % 360;
+        rotLon = ((touch0.lon - dx * DRAG_SENSITIVITY) % 360 + 360) % 360;
         rotLat = Math.max(-80, Math.min(80, touch0.lat + dy * 0.2));
       }
     }, { passive: true });
