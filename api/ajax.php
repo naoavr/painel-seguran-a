@@ -131,8 +131,11 @@ try {
             $name   = trim($input['name']   ?? '');
             if (empty($domain)) json_err('Domain is required');
             $apiKey = generate_api_key();
-            // Geocode the domain for the globe view
-            $geoInfo = get_ip_info(preg_replace('/^https?:\/\//i', '', $domain));
+            // Geocode the domain for the globe view (resolve hostname to IP first)
+            $host    = preg_replace('/^https?:\/\//i', '', rtrim($domain, '/'));
+            $host    = strtok($host, '/');
+            $siteIp  = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
+            $geoInfo = ($siteIp && filter_var($siteIp, FILTER_VALIDATE_IP)) ? get_ip_info($siteIp) : null;
             $siteLat = isset($geoInfo['lat']) ? (float)$geoInfo['lat'] : null;
             $siteLon = isset($geoInfo['lon']) ? (float)$geoInfo['lon'] : null;
             $db->execute(

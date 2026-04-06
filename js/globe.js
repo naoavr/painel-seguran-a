@@ -273,14 +273,14 @@
         totalReqs++;
         if (item.is_blocked) totalBlock++;
 
-        var srcLon = parseFloat(item.lon) || 0;
-        var srcLat = parseFloat(item.lat) || 0;
-        var dstLon = parseFloat(item.site_lon) || 0;
-        var dstLat = parseFloat(item.site_lat) || 0;
+        var srcLon = item.lon  != null && item.lon  !== '' ? parseFloat(item.lon)  : null;
+        var srcLat = item.lat  != null && item.lat  !== '' ? parseFloat(item.lat)  : null;
+        var dstLon = item.site_lon != null && item.site_lon !== '' ? parseFloat(item.site_lon) : null;
+        var dstLat = item.site_lat != null && item.site_lat !== '' ? parseFloat(item.site_lat) : null;
         var color  = item.is_blocked ? '#ff2d55' : (item.abuse_score > 50 ? '#ff9500' : '#00c896');
 
-        if (srcLon !== 0 || srcLat !== 0) {
-          addArc(srcLon, srcLat, dstLon, dstLat, color, item.is_blocked);
+        if (srcLon !== null && srcLat !== null && !isNaN(srcLon) && !isNaN(srcLat)) {
+          addArc(srcLon, srcLat, dstLon || 0, dstLat || 0, color, item.is_blocked);
         }
         addFeedItem(item);
       });

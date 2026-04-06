@@ -1,10 +1,8 @@
 <?php
-$allowed_origin = defined('INGEST_ALLOWED_ORIGIN') ? INGEST_ALLOWED_ORIGIN : '';
 $request_origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($allowed_origin && $request_origin === $allowed_origin) {
+$allowed_origin = defined('INGEST_ALLOWED_ORIGIN') ? INGEST_ALLOWED_ORIGIN : '';
+if ($request_origin !== '' && $allowed_origin !== '' && $request_origin === $allowed_origin) {
     header('Access-Control-Allow-Origin: ' . $allowed_origin);
-} elseif (!$allowed_origin && $request_origin) {
-    header('Access-Control-Allow-Origin: ' . $request_origin);
 }
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
