@@ -16,22 +16,23 @@
   var ipFeedList = null;
 
   // Continent outlines in [lon, lat] degrees (equirectangular projection, matches grid)
+  // Each entry has fill color and a pre-computed stroke color (no fragile string replace needed)
   var continents = [
     // North America
-    { color: 'rgba(0,200,150,0.15)', points: [
+    { color: 'rgba(0,200,150,0.15)', stroke: 'rgba(0,200,150,0.4)', points: [
       [-168,71],[-140,70],[-120,73],[-95,74],[-85,72],[-75,65],[-64,63],
       [-60,47],[-53,47],[-65,44],[-70,42],[-76,35],[-80,25],[-87,16],
       [-84,10],[-90,17],[-95,16],[-105,21],[-117,30],[-118,34],[-124,38],
       [-130,55],[-145,61],[-168,61]
     ]},
     // South America
-    { color: 'rgba(0,200,150,0.12)', points: [
+    { color: 'rgba(0,200,150,0.12)', stroke: 'rgba(0,200,150,0.35)', points: [
       [-80,10],[-62,13],[-50,5],[-36,-5],[-37,-14],[-40,-22],[-43,-22],
       [-50,-28],[-53,-33],[-58,-38],[-63,-42],[-65,-55],[-68,-52],[-75,-40],
       [-72,-30],[-70,-18],[-75,-10],[-80,-2],[-80,10]
     ]},
     // Europe
-    { color: 'rgba(10,132,255,0.15)', points: [
+    { color: 'rgba(10,132,255,0.15)', stroke: 'rgba(10,132,255,0.4)', points: [
       [-9,38],[-9,44],[-2,44],[0,46],[2,51],[5,58],[14,58],[18,60],
       [25,65],[28,71],[30,70],[28,65],[30,58],[25,55],[22,57],[18,57],
       [10,57],[8,55],[10,52],[14,54],[20,54],[24,58],[28,58],[30,62],
@@ -39,14 +40,14 @@
       [-5,48],[-5,44],[-9,39],[-9,38]
     ]},
     // Africa
-    { color: 'rgba(255,149,0,0.12)', points: [
+    { color: 'rgba(255,149,0,0.12)', stroke: 'rgba(255,149,0,0.35)', points: [
       [-5,37],[13,33],[25,32],[37,30],[43,12],[51,12],[44,5],[40,-11],
       [36,-18],[32,-29],[28,-34],[18,-34],[17,-29],[14,-22],[12,-18],
       [9,-5],[9,4],[0,5],[-5,5],[-10,8],[-15,12],[-17,15],[-13,17],
       [-10,25],[-5,33],[-5,37]
     ]},
     // Asia
-    { color: 'rgba(10,132,255,0.12)', points: [
+    { color: 'rgba(10,132,255,0.12)', stroke: 'rgba(10,132,255,0.35)', points: [
       [26,36],[30,36],[36,34],[40,36],[50,38],[60,42],[66,36],[72,22],
       [77,8],[80,13],[100,2],[108,2],[120,20],[125,30],[130,34],[135,36],
       [140,38],[145,43],[142,47],[138,55],[140,60],[145,68],[150,68],
@@ -58,7 +59,7 @@
       [48,28],[44,34],[38,36],[35,33],[30,30],[28,36],[26,36]
     ]},
     // Australia
-    { color: 'rgba(255,149,0,0.10)', points: [
+    { color: 'rgba(255,149,0,0.10)', stroke: 'rgba(255,149,0,0.3)', points: [
       [114,-22],[120,-20],[130,-11],[136,-12],[140,-15],[145,-17],[153,-28],
       [154,-38],[150,-39],[148,-42],[145,-40],[144,-38],[140,-36],[137,-35],
       [132,-33],[125,-34],[118,-32],[114,-28],[114,-22]
@@ -116,7 +117,7 @@
       ctx.closePath();
       ctx.fillStyle = cont.color;
       ctx.fill();
-      ctx.strokeStyle = cont.color.replace('0.1', '0.3').replace('0.12', '0.3').replace('0.15', '0.3');
+      ctx.strokeStyle = cont.stroke;
       ctx.lineWidth = 1;
       ctx.stroke();
     });
@@ -195,7 +196,10 @@
     ctx.translate(panX, panY);
     ctx.scale(scale, scale);
     servers.forEach(function (s) {
-      var pos = lonLatToXY(parseFloat(s.lon) || 0, parseFloat(s.lat) || 0);
+      var lon = parseFloat(s.lon);
+      var lat = parseFloat(s.lat);
+      if (isNaN(lon) || isNaN(lat)) return;
+      var pos = lonLatToXY(lon, lat);
       ctx.save();
       ctx.fillStyle = '#00c896';
       ctx.shadowColor = '#00c896';
@@ -260,6 +264,7 @@
 
   function getFlagEmoji(cc) {
     if (!cc || cc.length !== 2) return '🌐';
+    cc = cc.toUpperCase();
     var base = 0x1F1E6;
     return String.fromCodePoint(base + cc.charCodeAt(0) - 65, base + cc.charCodeAt(1) - 65);
   }
@@ -301,8 +306,9 @@
         var dstLat = item.site_lat != null && item.site_lat !== '' ? parseFloat(item.site_lat) : null;
         var color  = item.is_blocked ? '#ff2d55' : (item.abuse_score > 50 ? '#ff9500' : '#00c896');
 
-        if (srcLon !== null && srcLat !== null && !isNaN(srcLon) && !isNaN(srcLat)) {
-          addArc(srcLon, srcLat, dstLon || 0, dstLat || 0, color, item.is_blocked);
+        if (srcLon !== null && srcLat !== null && !isNaN(srcLon) && !isNaN(srcLat) &&
+            dstLon !== null && dstLat !== null && !isNaN(dstLon) && !isNaN(dstLat)) {
+          addArc(srcLon, srcLat, dstLon, dstLat, color, item.is_blocked);
         }
         addFeedItem(item);
       });

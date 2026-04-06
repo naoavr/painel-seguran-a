@@ -174,10 +174,10 @@ try {
                         COALESCE(r.country, t.country) AS country,
                         COALESCE(r.abuse_score, 0) AS abuse_score,
                         CASE WHEN b.id IS NOT NULL THEN 1 ELSE 0 END AS is_blocked,
-                        COALESCE(r.longitude, 0) AS lon,
-                        COALESCE(r.latitude, 0) AS lat,
-                        COALESCE(s.longitude, 0) AS site_lon,
-                        COALESCE(s.latitude, 0) AS site_lat
+                        r.longitude AS lon,
+                        r.latitude AS lat,
+                        s.longitude AS site_lon,
+                        s.latitude AS site_lat
                  FROM traffic_log t
                  LEFT JOIN ip_reputation r ON r.ip = t.ip
                  LEFT JOIN blocked_ips b ON b.ip = t.ip AND b.is_active = 1
@@ -186,7 +186,7 @@ try {
                  ORDER BY t.timestamp DESC LIMIT 50"
             );
             $servers = $db->fetchAll(
-                "SELECT domain, COALESCE(longitude, 0) AS lon, COALESCE(latitude, 0) AS lat FROM sites WHERE is_active=1"
+                "SELECT domain, longitude AS lon, latitude AS lat FROM sites WHERE is_active=1 AND longitude IS NOT NULL AND latitude IS NOT NULL"
             );
             json_ok(['traffic' => $traffic, 'servers' => $servers]);
 
