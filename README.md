@@ -84,6 +84,21 @@ Aceda a `https://your-domain.com/monitor/install.php` no browser. O wizard guia-
 | 5 — Config | Geração e escrita automática do ficheiro `config.php` com secret aleatório |
 | 6 — Complete | Instalação concluída |
 
+> **ℹ️ Utilizador e password por defeito ao importar a base de dados**
+>
+> O ficheiro `sql/schema.sql` **não cria nenhum utilizador administrador por defeito**. Ao importar o esquema diretamente, não existe qualquer conta de acesso ao painel.
+> O utilizador e a password são definidos por si no **Passo 4 — Admin User** do wizard de instalação (`install.php`).
+> O nome de utilizador sugerido por defeito no wizard é `admin`; a password é sempre escolhida pelo utilizador (mínimo 8 caracteres).
+>
+> Se importar o `schema.sql` manualmente (sem o wizard), deverá criar o utilizador administrador com o seguinte comando SQL, substituindo os valores adequados:
+>
+> ```sql
+> INSERT INTO dashboard_users (username, password_hash, email, is_active)
+> VALUES ('admin', '$2y$12$HASH_GERADO_COM_password_hash', 'admin@example.com', 1);
+> ```
+>
+> Use `password_hash('a_sua_password', PASSWORD_BCRYPT, ['cost' => 12])` em PHP para gerar o hash.
+
 ### 4. Eliminar o ficheiro de instalação
 
 > ⚠️ **Obrigatório por segurança.** Após a instalação, elimine o ficheiro `install.php`:
