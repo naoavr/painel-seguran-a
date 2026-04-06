@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS `sites` (
   `http_status` INT,
   `visits_today` INT DEFAULT 0,
   `visits_total` INT DEFAULT 0,
-  `is_active` TINYINT DEFAULT 1
+  `is_active` TINYINT DEFAULT 1,
+  `latitude` DECIMAL(9,6),
+  `longitude` DECIMAL(9,6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -98,7 +100,9 @@ CREATE TABLE IF NOT EXISTS `ip_reputation` (
   `is_proxy` TINYINT DEFAULT 0,
   `is_vpn` TINYINT DEFAULT 0,
   `last_checked` DATETIME,
-  `source` VARCHAR(50)
+  `source` VARCHAR(50),
+  `latitude` DECIMAL(9,6),
+  `longitude` DECIMAL(9,6)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------

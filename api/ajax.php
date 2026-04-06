@@ -131,9 +131,13 @@ try {
             $name   = trim($input['name']   ?? '');
             if (empty($domain)) json_err('Domain is required');
             $apiKey = generate_api_key();
+            // Geocode the domain for the globe view
+            $geoInfo = get_ip_info(preg_replace('/^https?:\/\//i', '', $domain));
+            $siteLat = isset($geoInfo['lat']) ? (float)$geoInfo['lat'] : null;
+            $siteLon = isset($geoInfo['lon']) ? (float)$geoInfo['lon'] : null;
             $db->execute(
-                'INSERT INTO sites (domain, api_key, name, status) VALUES (?,?,?,?)',
-                [$domain, $apiKey, $name, 'unknown']
+                'INSERT INTO sites (domain, api_key, name, status, latitude, longitude) VALUES (?,?,?,?,?,?)',
+                [$domain, $apiKey, $name, 'unknown', $siteLat, $siteLon]
             );
             $newId = (int)$db->lastInsertId();
             json_ok(['id' => $newId, 'api_key' => $apiKey, 'domain' => $domain], 'Site added');
@@ -167,16 +171,19 @@ try {
                         COALESCE(r.country, t.country) AS country,
                         COALESCE(r.abuse_score, 0) AS abuse_score,
                         CASE WHEN b.id IS NOT NULL THEN 1 ELSE 0 END AS is_blocked,
-                        0 AS lon, 0 AS lat,
-                        0 AS site_lon, 0 AS site_lat
+                        COALESCE(r.longitude, 0) AS lon,
+                        COALESCE(r.latitude, 0) AS lat,
+                        COALESCE(s.longitude, 0) AS site_lon,
+                        COALESCE(s.latitude, 0) AS site_lat
                  FROM traffic_log t
                  LEFT JOIN ip_reputation r ON r.ip = t.ip
                  LEFT JOIN blocked_ips b ON b.ip = t.ip AND b.is_active = 1
+                 LEFT JOIN sites s ON s.id = t.site_id
                  WHERE t.timestamp >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
                  ORDER BY t.timestamp DESC LIMIT 50"
             );
             $servers = $db->fetchAll(
-                "SELECT domain, 0 AS lon, 0 AS lat FROM sites WHERE is_active=1"
+                "SELECT domain, COALESCE(longitude, 0) AS lon, COALESCE(latitude, 0) AS lat FROM sites WHERE is_active=1"
             );
             json_ok(['traffic' => $traffic, 'servers' => $servers]);
 
@@ -214,6 +221,28 @@ try {
                  ON DUPLICATE KEY UPDATE config_value=NOW()"
             );
             json_ok([], 'Cleanup complete');
+
+        case 'export_stats':
+            $site_id   = isset($_GET['site_id']) && (int)$_GET['site_id'] > 0 ? (int)$_GET['site_id'] : null;
+            $date_from = $_GET['date_from'] ?? date('Y-m-d', strtotime('-7 days'));
+            $date_to   = $_GET['date_to']   ?? date('Y-m-d');
+            $where  = 'WHERE hour >= ? AND hour <= ?';
+            $params = [$date_from . ' 00:00:00', $date_to . ' 23:59:59'];
+            if ($site_id) { $where .= ' AND site_id=?'; $params[] = $site_id; }
+            $rows = $db->fetchAll(
+                "SELECT DATE_FORMAT(hour,'%Y-%m-%d %H:00') AS hour,
+                        SUM(total_requests) AS requests, SUM(unique_ips) AS unique_ips,
+                        SUM(error_count) AS errors, SUM(blocked_count) AS blocked
+                 FROM traffic_stats_hourly $where GROUP BY hour ORDER BY hour ASC",
+                $params
+            );
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="stats_' . date('Y-m-d') . '.csv"');
+            echo "Hour,Requests,Unique IPs,Errors,Blocked\n";
+            foreach ($rows as $r) {
+                echo implode(',', array_map(fn($v) => '"' . str_replace('"', '""', (string)$v) . '"', $r)) . "\n";
+            }
+            exit;
 
         default:
             json_err('Unknown action: ' . htmlspecialchars($action, ENT_QUOTES, 'UTF-8'), 400);

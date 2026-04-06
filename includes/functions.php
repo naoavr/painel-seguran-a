@@ -100,7 +100,7 @@ function check_abuseipdb(string $ip): ?array {
 }
 
 function get_ip_info(string $ip): ?array {
-    $url = 'http://ip-api.com/json/' . urlencode($ip) . '?fields=status,country,countryCode,city,isp,org,query';
+    $url = 'http://ip-api.com/json/' . urlencode($ip) . '?fields=status,country,countryCode,city,isp,org,lat,lon,query';
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -114,6 +114,45 @@ function get_ip_info(string $ip): ?array {
     $data = json_decode($response, true);
     if (!isset($data['status']) || $data['status'] !== 'success') return null;
     return $data;
+}
+
+function enrich_ip_geo(string $ip): void {
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        return;
+    }
+    try {
+        $db = DB::getInstance();
+        $existing = $db->fetchOne(
+            'SELECT latitude FROM ip_reputation WHERE ip=? AND latitude IS NOT NULL LIMIT 1',
+            [$ip]
+        );
+        if ($existing) return;
+    } catch (Exception $e) {
+        return;
+    }
+
+    $info = get_ip_info($ip);
+    if (!$info || !isset($info['lat'], $info['lon'])) return;
+
+    try {
+        $db = DB::getInstance();
+        $db->execute(
+            'INSERT INTO ip_reputation (ip, country, latitude, longitude, last_checked, source)
+             VALUES (?,?,?,?,NOW(),?)
+             ON DUPLICATE KEY UPDATE
+               latitude=VALUES(latitude), longitude=VALUES(longitude),
+               country=COALESCE(country, VALUES(country)), last_checked=NOW()',
+            [
+                $ip,
+                $info['country'] ?? '',
+                $info['lat'],
+                $info['lon'],
+                'ip-api',
+            ]
+        );
+    } catch (Exception $e) {
+        error_log('enrich_ip_geo DB error: ' . $e->getMessage());
+    }
 }
 
 function check_ssl(string $domain): array {
