@@ -17,7 +17,9 @@ $csrf_token = csrf_token();
   <link rel="stylesheet" href="css/style.css">
   <style>
     body.globe-page { margin: 0; overflow: hidden; background: #030508; }
-    #globeCanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    #globeCanvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+    #globeCanvas:active { cursor: grabbing; }
+
     .globe-header {
       position: fixed; top: 0; left: 0; right: 300px;
       height: 48px; z-index: 20;
@@ -48,6 +50,7 @@ $csrf_token = csrf_token();
       font-size: 0.8rem; font-weight: 700;
       color: var(--text-dim);
       background: rgba(13,17,23,0.95);
+      flex-shrink: 0;
     }
     .ip-feed-list { flex: 1; overflow-y: auto; }
     .ip-feed-item {
@@ -72,7 +75,7 @@ $csrf_token = csrf_token();
     .globe-controls {
       position: fixed; left: 16px; top: 64px;
       display: flex; flex-direction: column; gap: 6px;
-      z-index: 10;
+      z-index: 20;
     }
     .stats-bar {
       position: fixed; left: 0; right: 300px; bottom: 0;
@@ -87,9 +90,23 @@ $csrf_token = csrf_token();
     }
     .stats-bar span { display: flex; align-items: center; gap: 6px; }
     .stats-bar strong { color: var(--text); font-family: 'IBM Plex Mono', monospace; }
-    .dot-live { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; }
+    .dot-live { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; animation: pulse 2s infinite; flex-shrink: 0; }
     @keyframes pulse {
       0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .globe-header { right: 0; }
+      .ip-feed {
+        width: 100%;
+        top: auto; bottom: 44px;
+        height: 220px;
+        border-left: none;
+        border-top: 1px solid var(--border);
+      }
+      .stats-bar { right: 0; }
+      .globe-controls { top: 56px; }
     }
   </style>
 </head>
@@ -105,14 +122,14 @@ $csrf_token = csrf_token();
     </div>
   </div>
 
-  <div class="ip-feed" id="ipFeed">
+  <div class="ip-feed">
     <div class="ip-feed-header">🌐 Live Traffic Feed</div>
     <div class="ip-feed-list" id="ipFeedList"></div>
   </div>
 
   <div class="globe-controls">
-    <button class="btn btn-outline btn-sm" id="btnZoomIn">+</button>
-    <button class="btn btn-outline btn-sm" id="btnZoomOut">−</button>
+    <button class="btn btn-outline btn-sm" id="btnZoomIn" title="Zoom in">+</button>
+    <button class="btn btn-outline btn-sm" id="btnZoomOut" title="Zoom out">−</button>
     <button class="btn btn-outline btn-sm" id="btnReset" title="Reset view">↺</button>
     <button class="btn btn-outline btn-sm" id="btnClear" title="Clear arcs">✕</button>
   </div>
@@ -123,24 +140,12 @@ $csrf_token = csrf_token();
     <span>📡 Live: <strong id="s-arcs">0</strong></span>
   </div>
 
-  <script>
-  // Override ip-feed list reference for globe.js
-  document.getElementById('ipFeed') && (document.getElementById('ipFeed').querySelector = function(sel){
-    if(sel === '.ip-feed-item') return null;
-    return Element.prototype.querySelector.call(this, sel);
-  });
-  // Point ipFeed to the list element
-  window.addEventListener('DOMContentLoaded', function(){
-    var listEl = document.getElementById('ipFeedList');
-    if(listEl) window._ipFeedList = listEl;
-  });
-  </script>
   <script src="js/globe.js"></script>
   <script>
   document.getElementById('btnZoomIn').onclick  = function(){ window._globeZoomIn  && window._globeZoomIn(); };
   document.getElementById('btnZoomOut').onclick = function(){ window._globeZoomOut && window._globeZoomOut(); };
   document.getElementById('btnReset').onclick   = function(){ window._globeReset   && window._globeReset(); };
-  document.getElementById('btnClear').onclick   = function(){ window._globeArcs    = []; };
+  document.getElementById('btnClear').onclick   = function(){ window._globeClear   && window._globeClear(); };
   </script>
 </body>
 </html>

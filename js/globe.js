@@ -3,16 +3,17 @@
   'use strict';
 
   var canvas    = document.getElementById('globeCanvas');
-  var ipFeed    = document.getElementById('ipFeed');
-  var statsBar  = document.getElementById('statsBar');
   var ctx;
   var W, H;
   var arcs      = [];
   var ripples   = [];
-  var feedItems = [];
   var totalReqs = 0;
   var totalBlock = 0;
   var lastFetch  = 0;
+  var scale      = 1;
+  var panX       = 0;
+  var panY       = 0;
+  var ipFeedList = null;
 
   // Simplified continent polygons [lon, lat] (normalized to 0-1 space)
   var continents = [
@@ -53,14 +54,20 @@
   }
 
   function resize() {
-    W = canvas.width  = window.innerWidth;
-    H = canvas.height = window.innerHeight;
+    W = canvas.width  = canvas.offsetWidth  || window.innerWidth;
+    H = canvas.height = canvas.offsetHeight || window.innerHeight;
   }
 
   function drawMap() {
+    ctx.clearRect(0, 0, W, H);
+
     // Background
     ctx.fillStyle = '#030508';
     ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(scale, scale);
 
     // Grid lines
     ctx.strokeStyle = 'rgba(33,38,45,0.4)';
@@ -91,10 +98,15 @@
       ctx.lineWidth = 1;
       ctx.stroke();
     });
+
+    ctx.restore();
   }
 
   function drawArcs(now) {
     arcs = arcs.filter(function (a) { return now - a.born < a.life; });
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(scale, scale);
     arcs.forEach(function (a) {
       var progress = (now - a.born) / a.life;
       var alpha = progress < 0.5 ? progress * 2 : 2 - progress * 2;
@@ -111,7 +123,6 @@
       ctx.shadowColor = a.color;
       ctx.shadowBlur = 6;
 
-      // Draw partial arc up to progress
       ctx.beginPath();
       for (var t = 0; t <= progress; t += 0.02) {
         var mt = 1 - t;
@@ -121,7 +132,6 @@
       }
       ctx.stroke();
 
-      // Dot at tip
       var tp = Math.min(progress, 1);
       var mt2 = 1 - tp;
       var tx = mt2 * mt2 * a.sx + 2 * mt2 * tp * cp.x + tp * tp * a.ex;
@@ -133,10 +143,14 @@
 
       ctx.restore();
     });
+    ctx.restore();
   }
 
   function drawRipples(now) {
     ripples = ripples.filter(function (r) { return now - r.born < r.life; });
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(scale, scale);
     ripples.forEach(function (r) {
       var progress = (now - r.born) / r.life;
       var radius   = progress * 40;
@@ -150,12 +164,16 @@
       ctx.stroke();
       ctx.restore();
     });
+    ctx.restore();
   }
 
   function drawServerDots() {
     var servers = window._globeServers || [];
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(scale, scale);
     servers.forEach(function (s) {
-      var pos = lonLatToXY(s.lon, s.lat);
+      var pos = lonLatToXY(parseFloat(s.lon) || 0, parseFloat(s.lat) || 0);
       ctx.save();
       ctx.fillStyle = '#00c896';
       ctx.shadowColor = '#00c896';
@@ -168,6 +186,7 @@
       ctx.font = '11px Space Grotesk, sans-serif';
       ctx.fillText(s.name || s.domain, pos.x + 8, pos.y + 4);
     });
+    ctx.restore();
   }
 
   function frame() {
@@ -193,6 +212,7 @@
   }
 
   function addFeedItem(item) {
+    if (!ipFeedList) return;
     var div = document.createElement('div');
     div.className = 'ip-feed-item';
     var flag = item.country_code ? getFlagEmoji(item.country_code) : '🌐';
@@ -201,21 +221,19 @@
     dot.textContent = '●';
     dot.style.color = color;
     var ipSpan = document.createElement('span');
+    ipSpan.className = 'ip-text';
     ipSpan.style.fontFamily = 'IBM Plex Mono,monospace';
     ipSpan.style.color = '#e6edf3';
     ipSpan.textContent = item.ip || '';
     var countrySpan = document.createElement('span');
+    countrySpan.className = 'ip-country';
     countrySpan.textContent = flag + ' ' + (item.country || '');
     div.appendChild(dot);
     div.appendChild(ipSpan);
     div.appendChild(countrySpan);
-    ipFeed.insertBefore(div, ipFeed.firstChild);
-    var all = ipFeed.querySelectorAll('.ip-feed-item');
+    ipFeedList.insertBefore(div, ipFeedList.firstChild);
+    var all = ipFeedList.querySelectorAll('.ip-feed-item');
     if (all.length > 30) all[all.length - 1].remove();
-  }
-
-  function escHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   function getFlagEmoji(cc) {
@@ -225,10 +243,14 @@
   }
 
   function updateStats() {
+    var statsBar = document.getElementById('statsBar');
     if (!statsBar) return;
-    statsBar.innerHTML = '<span>🌐 Requests: <strong id="s-req">' + totalReqs + '</strong></span>'
-      + '<span>🔴 Blocked: <strong id="s-blk">' + totalBlock + '</strong></span>'
-      + '<span>📡 Live arcs: <strong>' + arcs.length + '</strong></span>';
+    var reqEl  = document.getElementById('s-req');
+    var blkEl  = document.getElementById('s-blk');
+    var arcEl  = document.getElementById('s-arcs');
+    if (reqEl)  reqEl.textContent  = totalReqs;
+    if (blkEl)  blkEl.textContent  = totalBlock;
+    if (arcEl)  arcEl.textContent  = arcs.length;
   }
 
   function fetchData() {
@@ -251,13 +273,15 @@
         totalReqs++;
         if (item.is_blocked) totalBlock++;
 
-        var srcLon = parseFloat(item.lon) || 0;
-        var srcLat = parseFloat(item.lat) || 0;
-        var dstLon = parseFloat(item.site_lon) || 0;
-        var dstLat = parseFloat(item.site_lat) || 0;
+        var srcLon = item.lon  != null && item.lon  !== '' ? parseFloat(item.lon)  : null;
+        var srcLat = item.lat  != null && item.lat  !== '' ? parseFloat(item.lat)  : null;
+        var dstLon = item.site_lon != null && item.site_lon !== '' ? parseFloat(item.site_lon) : null;
+        var dstLat = item.site_lat != null && item.site_lat !== '' ? parseFloat(item.site_lat) : null;
         var color  = item.is_blocked ? '#ff2d55' : (item.abuse_score > 50 ? '#ff9500' : '#00c896');
 
-        addArc(srcLon, srcLat, dstLon, dstLat, color, item.is_blocked);
+        if (srcLon !== null && srcLat !== null && !isNaN(srcLon) && !isNaN(srcLat)) {
+          addArc(srcLon, srcLat, dstLon || 0, dstLat || 0, color, item.is_blocked);
+        }
         addFeedItem(item);
       });
       updateStats();
@@ -270,22 +294,65 @@
     return meta ? meta.getAttribute('content') : '';
   }
 
+  // Pan support
+  var isPanning = false;
+  var panStart  = { x: 0, y: 0 };
+
+  function initPan() {
+    canvas.addEventListener('mousedown', function (e) {
+      isPanning = true;
+      panStart = { x: e.clientX - panX, y: e.clientY - panY };
+      canvas.style.cursor = 'grabbing';
+    });
+    canvas.addEventListener('mousemove', function (e) {
+      if (!isPanning) return;
+      panX = e.clientX - panStart.x;
+      panY = e.clientY - panStart.y;
+    });
+    canvas.addEventListener('mouseup',   function () { isPanning = false; canvas.style.cursor = 'default'; });
+    canvas.addEventListener('mouseleave',function () { isPanning = false; canvas.style.cursor = 'default'; });
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var delta = e.deltaY > 0 ? 0.9 : 1.1;
+      var rect  = canvas.getBoundingClientRect();
+      var mx = e.clientX - rect.left;
+      var my = e.clientY - rect.top;
+      panX = mx - (mx - panX) * delta;
+      panY = my - (my - panY) * delta;
+      scale = Math.min(6, Math.max(0.3, scale * delta));
+    }, { passive: false });
+
+    // Touch pan
+    var touch0 = null;
+    canvas.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 1) {
+        touch0 = { x: e.touches[0].clientX - panX, y: e.touches[0].clientY - panY };
+      }
+    }, { passive: true });
+    canvas.addEventListener('touchmove', function (e) {
+      if (e.touches.length === 1 && touch0) {
+        panX = e.touches[0].clientX - touch0.x;
+        panY = e.touches[0].clientY - touch0.y;
+      }
+    }, { passive: true });
+    canvas.addEventListener('touchend', function () { touch0 = null; }, { passive: true });
+  }
+
   function init() {
     ctx = canvas.getContext('2d');
     resize();
     window.addEventListener('resize', resize);
 
-    // Controls
-    var ctrlWrap = document.querySelector('.globe-controls');
-    if (ctrlWrap) {
-      var clearBtn = document.createElement('button');
-      clearBtn.className = 'btn btn-outline btn-sm';
-      clearBtn.textContent = 'Clear';
-      clearBtn.addEventListener('click', function () { arcs = []; });
-      ctrlWrap.appendChild(clearBtn);
-    }
+    ipFeedList = document.getElementById('ipFeedList');
 
-    // Start fetch loop
+    initPan();
+
+    // Expose controls to globe.php buttons
+    window._globeZoomIn  = function () { scale = Math.min(6, scale * 1.2); };
+    window._globeZoomOut = function () { scale = Math.max(0.3, scale / 1.2); };
+    window._globeReset   = function () { scale = 1; panX = 0; panY = 0; };
+    window._globeClear   = function () { arcs = []; };
+
     fetchData();
     setInterval(fetchData, 3000);
     setInterval(updateStats, 1000);
@@ -300,3 +367,4 @@
   }
 
 })();
+

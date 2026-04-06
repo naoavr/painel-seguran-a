@@ -1,5 +1,9 @@
 <?php
-header('Access-Control-Allow-Origin: ' . ($_SERVER['HTTP_ORIGIN'] ?? '*'));
+$request_origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowed_origin = defined('INGEST_ALLOWED_ORIGIN') ? INGEST_ALLOWED_ORIGIN : '';
+if ($request_origin !== '' && $allowed_origin !== '' && $request_origin === $allowed_origin) {
+    header('Access-Control-Allow-Origin: ' . $allowed_origin);
+}
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, X-API-Key');
 header('Content-Type: application/json; charset=utf-8');
@@ -129,6 +133,16 @@ switch ($type) {
             'UPDATE sites SET visits_today = visits_today + ?, visits_total = visits_total + ? WHERE id=?',
             [count($records), count($records), $site_id]
         );
+
+        // Enrich geolocation for unique IPs (runs after response is sent)
+        $seen = [];
+        foreach ($records as $rec) {
+            $ip = trim($rec['ip'] ?? '');
+            if (!empty($ip) && !isset($seen[$ip])) {
+                $seen[$ip] = true;
+                enrich_ip_geo($ip);
+            }
+        }
         break;
 
     case 'errors':
