@@ -3,6 +3,8 @@
  * Monitor Central — Installation Wizard
  */
 
+session_start();
+
 if (is_file(__DIR__ . '/config.php')) {
     $existing = file_get_contents(__DIR__ . '/config.php');
     if (strpos($existing, 'your_db_user') === false) {
@@ -130,8 +132,6 @@ if ($step === 5 && !empty($_SESSION['install_db'])) {
         $errors[] = 'Could not write config.php. Please check directory permissions.';
     }
 }
-
-session_start();
 
 ?>
 <!DOCTYPE html>
