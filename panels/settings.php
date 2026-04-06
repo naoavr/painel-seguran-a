@@ -50,11 +50,11 @@ function cfg(array $config, string $key, string $default = ''): string {
 <div class="alert-bar <?= $msgType ?>"><?= htmlspecialchars($msg, ENT_QUOTES, 'UTF-8') ?></div>
 <?php endif; ?>
 
-<div style="max-width:680px;">
-  <form method="POST" action="dashboard.php?panel=settings">
-    <?= csrf_field() ?>
+<form method="POST" action="dashboard.php?panel=settings">
+  <?= csrf_field() ?>
 
-    <div class="card mb-3">
+  <div class="grid-2col mb-3">
+    <div class="card">
       <div class="card-header"><h3>API Keys</h3></div>
       <div class="form-group">
         <label>AbuseIPDB API Key</label>
@@ -76,7 +76,7 @@ function cfg(array $config, string $key, string $default = ''): string {
       </div>
     </div>
 
-    <div class="card mb-3">
+    <div class="card">
       <div class="card-header"><h3>Notifications</h3></div>
       <div class="form-group">
         <label>Alert Email</label>
@@ -84,21 +84,23 @@ function cfg(array $config, string $key, string $default = ''): string {
                placeholder="admin@yourdomain.com">
       </div>
     </div>
+  </div>
 
-    <div class="card mb-3">
-      <div class="card-header"><h3>Security</h3></div>
-      <div class="form-group">
+  <div class="card mb-3">
+    <div class="card-header"><h3>Security</h3></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div class="form-group mb-0">
         <label>Session Lifetime (seconds)</label>
         <input type="number" name="session_lifetime" min="300" max="86400"
                value="<?= cfg($config, 'session_lifetime', '3600') ?>">
       </div>
-      <div class="form-group">
+      <div class="form-group mb-0">
         <label>Max Login Attempts (per minute per IP)</label>
         <input type="number" name="max_login_attempts" min="1" max="20"
                value="<?= cfg($config, 'max_login_attempts', '5') ?>">
       </div>
     </div>
+  </div>
 
-    <button type="submit" class="btn btn-accent">💾 Save Settings</button>
-  </form>
-</div>
+  <button type="submit" class="btn btn-accent">💾 Save Settings</button>
+</form>

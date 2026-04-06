@@ -18,10 +18,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $domain = trim($_POST['domain'] ?? '');
             $name   = trim($_POST['name']   ?? '');
             if (!empty($domain)) {
-                $apiKey = generate_api_key();
+                $apiKey  = generate_api_key();
+                $host    = preg_replace('/^https?:\/\//i', '', rtrim($domain, '/'));
+                $host    = strtok($host, '/');
+                $siteIp  = filter_var($host, FILTER_VALIDATE_IP) ? $host : gethostbyname($host);
+                $geoInfo = ($siteIp && filter_var($siteIp, FILTER_VALIDATE_IP)) ? get_ip_info($siteIp) : null;
+                $siteLat = isset($geoInfo['lat']) ? (float)$geoInfo['lat'] : null;
+                $siteLon = isset($geoInfo['lon']) ? (float)$geoInfo['lon'] : null;
                 $db->execute(
-                    'INSERT INTO sites (domain, api_key, name, status) VALUES (?,?,?,?)',
-                    [$domain, $apiKey, $name, 'unknown']
+                    'INSERT INTO sites (domain, api_key, name, status, latitude, longitude) VALUES (?,?,?,?,?,?)',
+                    [$domain, $apiKey, $name, 'unknown', $siteLat, $siteLon]
                 );
                 $msg = 'Site added. API Key: ' . $apiKey;
             } else {

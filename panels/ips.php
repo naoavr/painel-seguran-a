@@ -141,7 +141,7 @@ $sites = $db->fetchAll('SELECT id, domain, name FROM sites WHERE is_active=1 ORD
 </div>
 
 <div id="tab-block-form" class="tab-content">
-  <div class="card" style="max-width:500px;">
+  <div class="card">
     <h3 style="margin-bottom:16px;">Block an IP Address</h3>
     <form method="POST" action="dashboard.php?panel=ips">
       <?= csrf_field() ?>
